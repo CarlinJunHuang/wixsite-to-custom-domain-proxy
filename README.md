@@ -23,7 +23,7 @@ A lightweight **reverse proxy** solution for serving free Wix sites under your o
 root/
 ├── host.json
 ├── package.json
-└── ViaAdProxy/
+└── Proxy/
     ├── function.json
     └── index.js   # main proxy logic
 ```
@@ -97,3 +97,4 @@ Originally developed as part of the **ViaAdNexus project (NOC 2025 August)**. In
 ## 📄 License
 
 [MIT](LICENSE) – free to use, modify, and distribute.
+
