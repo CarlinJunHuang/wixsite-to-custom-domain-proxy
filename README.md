@@ -32,18 +32,16 @@ root/
 
 ## ⚙️ Configuration
 
-Update constants at the top of [`index.js`](ViaAdProxy/index.js):
+Edit [`config.js`](config.js) or provide equivalent environment variables:
 
 * `ORIGIN` – your Wix origin (e.g. `https://<yoursite>.wixsite.com`).
 * `SITE_PATH` – the Wix path prefix (e.g. `/mysitename`).
 * `PUBLIC_HOST` – your custom domain (e.g. `https://www.example.com`).
 * `PUBLIC_BASE` – optional if you want to deploy under a subpath.
 * `FAVICON_URL` / `OG_IMAGE_URL` – local assets for branding.
+* `SITE_TITLE` / `SITE_DESCRIPTION` – SEO metadata injected into HTML pages.
 
-Other optional constants:
-
-* `TIMEOUT_MS` – upstream request timeout.
-* `ALLOW_METHODS` – allowed HTTP methods for CORS.
+Other tunables like `TIMEOUT_MS` and `ALLOW_METHODS` live at the top of [`Proxy/index.js`](Proxy/index.js).
 
 ---
 

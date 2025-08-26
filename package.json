@@ -1,5 +1,5 @@
 {
-  "name": "viaadnexus-azure-functions-proxy",
+  "name": "wixsite-to-custom-domain-proxy",
   "version": "1.0.6",
   "description": "Azure Functions (HTTP trigger) reverse proxy to Wix free site, keeping your own domain.",
   "license": "MIT",
