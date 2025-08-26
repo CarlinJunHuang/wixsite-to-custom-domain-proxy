@@ -2,21 +2,35 @@
 // Focus: P2 remove Wix banner completely, P3 smooth in-page anchor scroll
 // Node.js 20 (Azure Functions v4)
 
-const ORIGIN = "https://viaadnexusnus.wixsite.com";
-const SITE_PATH = "/viaadnexus";
+const {
+  ORIGIN,
+  SITE_PATH,
+  PUBLIC_HOST,
+  PUBLIC_BASE = "",
+  PUBLIC_ORIGIN = PUBLIC_HOST,
+  FAVICON_URL,
+  OG_IMAGE_URL = FAVICON_URL,
+  LOGO_ALT_NAMES = []
+} = require("../config");
 
 const fs = require("fs");
 const pathLib = require("path");
 
-const PUBLIC_HOST = "https://www.viaadnexus.top";  // your custom domain
-const PUBLIC_BASE = "";                             // keep empty unless you deploy under a subpath
-const PUBLIC_ORIGIN = PUBLIC_HOST;
-
-const FAVICON_URL = "/assets/viaadnexus_logo.png";
-const OG_IMAGE_URL = FAVICON_URL;
-
 const TIMEOUT_MS = 30000;
 const ALLOW_METHODS = "GET,HEAD,POST,OPTIONS,PUT,PATCH,DELETE";
+
+const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const ORIGIN_HOST = new URL(ORIGIN).hostname;
+const ALLOWED_HOSTS = [
+  "static.wixstatic.com","static-origin.wixstatic.com",
+  "video.wixstatic.com","video-orig.wixstatic.com",
+  "static.parastorage.com","siteassets.parastorage.com","pages.parastorage.com",
+  ORIGIN_HOST
+];
+const ALLOWED_HOSTS_RE = new RegExp("^https://(?:" + ALLOWED_HOSTS.map(esc).join("|") + ")/");
+const hostPat = "(?:" + ALLOWED_HOSTS.map(h => h.replace(/\./g, "\\.")).join("|") + ")";
+const PATH_PREFIX_RE = new RegExp("^" + esc(SITE_PATH) + "(\\/|$)");
+const stripSitePrefix = s => (typeof s === "string") ? s.replace(PATH_PREFIX_RE, "/") : s;
 
 const HOP = new Set([
   "connection","keep-alive","proxy-authenticate","proxy-authorization",
@@ -29,7 +43,6 @@ const STATIC_EXTS = new Set([
 
 function fileExt(p){ const i=p.lastIndexOf("."); return i>=0?p.slice(i).toLowerCase():""; }
 const looksHtml = p => !/\.(js|css|png|jpe?g|webp|gif|svg|ico|woff2?|ttf)(\?|$)/i.test(p);
-const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 async function fetchRetry(url, init, tries=2){
   let lastErr;
@@ -54,8 +67,7 @@ async function fetchRetry(url, init, tries=2){
   throw lastErr;
 }
 
-// Strip any "path-like" keys in objects that start with /viaadnexus by removing the prefix (supports deep/nested structures)
-const PATH_PREFIX_RE = /^\/viaadnexus(\/|$)/;
+// Strip any "path-like" keys in objects that start with SITE_PATH by removing the prefix (supports deep/nested structures)
 function stripPathMapKeysDeep(o, depth = 0) {
   if (!o || typeof o !== "object" || depth > 6) return;
   if (Array.isArray(o)) { o.forEach(v => stripPathMapKeysDeep(v, depth + 1)); return; }
@@ -145,7 +157,7 @@ module.exports = async function (context, req) {
       if (/json/.test(ct)) {
         const text = await r.text();
         try {
-          const strip = s => (typeof s === "string") ? s.replace(/^\/viaadnexus(\/|$)/, "/") : s;
+          const strip = stripSitePrefix;
           const ROUTE_KEYS = new Set([
             "url","href","baseUrl","basePath","publicBaseUrl","routerPublicBaseUrl",
             "appRouterPrefix","prefix","pageUriSEO","canonicalUrl"
@@ -180,7 +192,7 @@ module.exports = async function (context, req) {
     // 1.1) assets relay: /__x/asset?u=<absolute-url>
     if (path.startsWith("/__x/asset")){
       const u = (req.query && req.query.u) || "";
-      const allow = /^https:\/\/(?:static(?:-origin)?\.wixstatic\.com|video(?:-orig)?\.wixstatic\.com|static\.parastorage\.com|siteassets\.parastorage\.com|pages\.parastorage\.com|viaadnexusnus\.wixsite\.com)\//;
+      const allow = ALLOWED_HOSTS_RE;
       if (!allow.test(u)){ context.res = { status:400, body:"bad asset url" }; return; }
 
       // If accidentally routed to asset but is actually wixsite.com/_api -> respond 307 redirect to /__x/wixapi
@@ -233,9 +245,9 @@ module.exports = async function (context, req) {
           try {
             let j = JSON.parse(text);
 
-            const strip = s => (typeof s === "string") ? s.replace(/^\/viaadnexus(\/|$)/, "/") : s;
+            const strip = stripSitePrefix;
 
-            // 1) Remove the /viaadnexus prefix from pagesMap keys
+            // 1) Remove the SITE_PATH prefix from pagesMap keys
             if (j.pagesMap && typeof j.pagesMap === "object") {
               const out = {};
               for (const [k, v] of Object.entries(j.pagesMap)) out[strip(k)] = v;
@@ -309,7 +321,7 @@ module.exports = async function (context, req) {
     // 1.2) worker relay: /__x/worker?u=<absolute-url>
     if (path.startsWith("/__x/worker")){
       const u = (req.query && req.query.u) || "";
-      const allow = /^https:\/\/(?:static(?:-origin)?\.wixstatic\.com|video(?:-orig)?\.wixstatic\.com|static\.parastorage\.com|siteassets\.parastorage\.com|pages\.parastorage\.com|viaadnexusnus\.wixsite\.com)\//;
+      const allow = ALLOWED_HOSTS_RE;
       if (!allow.test(u)){ context.res = { status:400, body:"bad worker url" }; return; }
 
       if (/\/_api\//i.test(u)) {
@@ -320,7 +332,7 @@ module.exports = async function (context, req) {
       let upstreamUrl = u;
       try {
         const U = new URL(u);
-        // If externalBaseUrl，Normalize to PUBLIC_ORIGIN（如 https://www.viaadnexus.top）
+        // If externalBaseUrl, normalize to PUBLIC_ORIGIN
         if (U.searchParams.has('externalBaseUrl')) {
           U.searchParams.set('externalBaseUrl', PUBLIC_ORIGIN);
           upstreamUrl = U.toString();
@@ -332,13 +344,8 @@ module.exports = async function (context, req) {
 
       // —— Worker-scope prelude, no regex —— //
       const prelude = `
-;(()=>{ 
-  var ALLOWED_HOSTS = [
-    "static.wixstatic.com","static-origin.wixstatic.com",
-    "video.wixstatic.com","video-orig.wixstatic.com",
-    "static.parastorage.com","siteassets.parastorage.com","pages.parastorage.com",
-    "viaadnexusnus.wixsite.com"
-  ];
+;(()=>{
+  var ALLOWED_HOSTS = ${JSON.stringify(ALLOWED_HOSTS)};
   var WIX  = "${ORIGIN}";
   var SITE = "${SITE_PATH}";
 
@@ -357,16 +364,11 @@ module.exports = async function (context, req) {
       var host = x.hostname, path = x.pathname || "";
 
       var isWix = (host === 'wix.com' || host.endsWith('.wix.com'));
-      var isWixSite = (host === 'viaadnexusnus.wixsite.com');
+      var isWixSite = (host === '${ORIGIN_HOST}');
       if ((isWix || isWixSite) && path.startsWith('/_api/'))
         return '/__x/wixapi?u=' + encodeURIComponent(x.href);
 
-      var ALLOWED = [
-        "static.wixstatic.com","static-origin.wixstatic.com",
-        "video.wixstatic.com","video-orig.wixstatic.com",
-        "static.parastorage.com","siteassets.parastorage.com","pages.parastorage.com",
-        "viaadnexusnus.wixsite.com"
-      ];
+      var ALLOWED = ${JSON.stringify(ALLOWED_HOSTS)};
       if (ALLOWED.indexOf(host) >= 0) return '/__x/asset?u=' + encodeURIComponent(x.href);
 
       return u;
@@ -449,8 +451,8 @@ module.exports = async function (context, req) {
           };
           return;
         }else{
-          const alt = pathLib.join(assetsDir, "viaadnexus_logo1.png");
-          if (fs.existsSync(alt)){
+          const alt = LOGO_ALT_NAMES[1] ? pathLib.join(assetsDir, LOGO_ALT_NAMES[1]) : null;
+          if (alt && fs.existsSync(alt)){
             const buf = fs.readFileSync(alt);
             context.res = {
               status: 200,
@@ -465,7 +467,7 @@ module.exports = async function (context, req) {
       }
 
       if (routePath === "/favicon.ico"){
-        const cand = [ "viaadnexus_logo.png", "viaadnexus_logo1.png" ].map(n=>pathLib.join(assetsDir, n));
+        const cand = LOGO_ALT_NAMES.map(n=>pathLib.join(assetsDir, n));
         for (const f of cand){
           if (fs.existsSync(f)){
             const buf = fs.readFileSync(f);
@@ -569,7 +571,6 @@ module.exports = async function (context, req) {
         .replace(new RegExp(esc(ORIGIN)+esc(SITE_PATH), "g"), PUBLIC_ORIGIN)
         .replace(new RegExp(esc(ORIGIN), "g"), PUBLIC_HOST);
     
-      const hostPat = "(?:static(?:-origin)?\\.wixstatic\\.com|video(?:-orig)?\\.wixstatic\\.com|static\\.parastorage\\.com|siteassets\\.parastorage\\.com|pages\\.parastorage\\.com|viaadnexusnus\\.wixsite\\.com)";
       const reAttrs = new RegExp("(\\b(?:src|href))=([\"'])(https?:\\/\\/" + hostPat + "[^\"']+)\\2", "gi");
 
       function shouldBypassToOrigin(attr, url) {
@@ -610,11 +611,11 @@ module.exports = async function (context, req) {
         return s.replace(/</g,"\\u003C").replace(/\u2028/g,"\\u2028").replace(/\u2029/g,"\\u2029");
       }
       function stripPathMapKeysDeep(root) {
-        const strip = s => (typeof s === "string") ? s.replace(/^\/viaadnexus(\/|$)/, "/") : s;
+        const strip = stripSitePrefix;
         const walk = (o, depth=0) => {
           if (!o || typeof o !== "object" || depth > 6) return;
           if (Array.isArray(o)) { o.forEach(v => walk(v, depth+1)); return; }
-          // When it includes pagesMap keys, strip the /viaadnexus prefix
+          // When it includes pagesMap keys, strip the SITE_PATH prefix
           if (o.pagesMap && typeof o.pagesMap === "object") {
             const out = {};
             for (const [k, v] of Object.entries(o.pagesMap)) out[strip(k)] = v;
@@ -645,13 +646,13 @@ module.exports = async function (context, req) {
             if (obj.requestUrl) obj.requestUrl = PUBLIC_ORIGIN + "/";
             if (obj.site && obj.site.externalBaseUrl) obj.site.externalBaseUrl = PUBLIC_ORIGIN;
 
-            // —— Unified deep traversal: strip /viaadnexus prefix + change domain for absolute links (non-API) + explicitly convert API basePath to /__x/wixapi —— //
+            // —— Unified deep traversal: strip SITE_PATH prefix + change domain for absolute links (non-API) + explicitly convert API basePath to /__x/wixapi —— //
             const ROUTE_STR_KEYS = new Set([
               "url","href","baseUrl","basePath","publicBaseUrl",
               "routerPublicBaseUrl","appRouterPrefix","prefix","pageUriSEO","canonicalUrl"
             ]);
 
-            const stripSitePrefix = s => (typeof s === "string") ? s.replace(/^\/viaadnexus(\/|$)/, "/") : s;
+            // Reuse helper for stripping SITE_PATH
 
             // Non-API absolute links: ORIGIN(+SITE_PATH) => PUBLIC_ORIGIN; ORIGIN => PUBLIC_HOST
             const replNonApiAbs = s => {
@@ -685,7 +686,7 @@ module.exports = async function (context, req) {
                 const v = o[k];
                 if (ROUTE_STR_KEYS.has(k) && typeof v === "string") {
                   let nv = v;
-                  if (nv.startsWith("/viaadnexus")) nv = stripSitePrefix(nv); 
+                  if (nv.startsWith(SITE_PATH)) nv = stripSitePrefix(nv);
                   // First convert absolute _api links explicitly to the same-origin relay
                   if (/_api\//.test(nv)) nv = mapApiAbsToRelay(nv);
                   // For non-API absolute links, change the root to perform cross-origin replacement
@@ -747,7 +748,7 @@ module.exports = async function (context, req) {
                 // 1) if '/__x/wixapi?u=' return it as is
                 if (/^\/__x\/wixapi\?u=/.test(s)) return s;
 
-                // 2) same origin '/_api/...' or 'https://www.viaadnexus.top/_api/...'
+                // 2) same origin '/_api/...' or `${PUBLIC_HOST}/_api/...`
                 if (u.origin === PUBLIC_HOST && u.pathname.startsWith("/_api/")) {
                   const tail = u.pathname.slice("/_api/".length) + (u.search || "");
                   const upstream = ORIGIN + SITE_PATH + "/_api/" + tail;
@@ -817,8 +818,9 @@ module.exports = async function (context, req) {
             // —— Before final serialization: do one safe-pass sanitization for JSON literals —— //
             let raw = JSON.stringify(obj);
 
-            // 1) Strip string values that start with "/viaadnexus" (only affect JSON string literals enclosed in quotes)
-            raw = raw.replace(/"\/viaadnexus(\/[^"]*)"/g, (_, rest) => "\"/" + rest.replace(/^\//, "") + "\"");
+            // 1) Strip string values that start with SITE_PATH (only affect JSON string literals enclosed in quotes)
+            const jsonStripRe = new RegExp('"' + esc(SITE_PATH) + '(\/[^\"]*)"', 'g');
+            raw = raw.replace(jsonStripRe, (_, rest) => "\"/" + rest.replace(/^\//, "") + "\"");
 
             // 2) For non-API absolute upstream links, replace their root to be cross-origin (ORIGIN(+SITE_PATH)→PUBLIC_ORIGIN; ORIGIN→PUBLIC_HOST)
             raw = raw
@@ -849,7 +851,7 @@ module.exports = async function (context, req) {
               "url","href","pageUriSEO","canonicalUrl"
             ]);
 
-            const strip = s => (typeof s === "string") ? s.replace(/^\/viaadnexus(\/|$)/, "/") : s;
+            const strip = stripSitePrefix;
 
             const replNonApiAbs = s => {
               if (typeof s !== "string") return s;
@@ -887,7 +889,7 @@ module.exports = async function (context, req) {
             };
             walk(obj);
 
-            // pagesMap keys: strip /viaadnexus prefix
+            // pagesMap keys: strip SITE_PATH prefix
             stripPathMapKeysDeep(obj);
 
             const safe = safeJsonForHtml(JSON.stringify(obj));
@@ -902,15 +904,10 @@ module.exports = async function (context, req) {
       const earlyBoot = `
 <script id="viaa-worker-boot">
 (function(){
-  var WIX  = "https://viaadnexusnus.wixsite.com";
-  var SITE = "/viaadnexus";
+  var WIX  = "${ORIGIN}";
+  var SITE = "${SITE_PATH}";
 
-  var ALLOWED_HOSTS = [
-    "static.wixstatic.com","static-origin.wixstatic.com",
-    "video.wixstatic.com","video-orig.wixstatic.com",
-    "static.parastorage.com","siteassets.parastorage.com","pages.parastorage.com",
-    "viaadnexusnus.wixsite.com"
-  ];
+  var ALLOWED_HOSTS = ${JSON.stringify(ALLOWED_HOSTS)};
   function needAsset(u){
     try{
       var x=new URL(String(u), location.href);
@@ -923,7 +920,7 @@ module.exports = async function (context, req) {
       var x=new URL(String(u), location.href);
       // ★ wix.com & wixsite.com - /_api go to /__x/wixapi
       var isWix = (x.hostname==='wix.com' || x.hostname.endsWith('.wix.com'));
-      var isWixSite = (x.hostname==='viaadnexusnus.wixsite.com');
+      var isWixSite = (x.hostname==='${ORIGIN_HOST}');
       return (isWix || isWixSite) && x.pathname.startsWith('/_api/');
     } catch(_){ return false; }
   }
@@ -1021,10 +1018,10 @@ module.exports = async function (context, req) {
       const inject = `
 <script>
 (function () {
-  var WIX  = "https://viaadnexusnus.wixsite.com";
-  var MY   = "https://www.viaadnexus.top";
-  var MYO  = "https://www.viaadnexus.top";
-  var SITE = "/viaadnexus";
+  var WIX  = "${ORIGIN}";
+  var MY   = "${PUBLIC_HOST}";
+  var MYO  = "${PUBLIC_ORIGIN}";
+  var SITE = "${SITE_PATH}";
 
   // keep URL clean by default; set true if you want #hash visible
   var USE_HASH = false;
@@ -1159,7 +1156,7 @@ module.exports = async function (context, req) {
 
   (function enforceFavicon(){
     try{
-      var href = "/assets/viaadnexus_logo.png";
+      var href = "${FAVICON_URL}";
       document.querySelectorAll('link[rel*="icon"]').forEach(function(el){ el.remove(); });
       var link = document.createElement('link');
       link.rel = "icon";
