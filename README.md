@@ -94,5 +94,5 @@ Originally developed as part of the **ViaAdNexus project (NOC 2025 August)**. In
 
 ## 📄 License
 
-[MIT](LICENSE) – free to use, modify, and distribute.
+[Apache-2.0](LICENSE) – includes an explicit patent license.
 
