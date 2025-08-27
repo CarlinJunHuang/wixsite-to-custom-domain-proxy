@@ -51,7 +51,7 @@ Other tunables like `TIMEOUT_MS` and `ALLOW_METHODS` live at the top of [`Proxy/
 2. Add these project files to a GitHub repo.
 3. Let Azure set up a GitHub Actions workflow.
 4. Push changes to `main` (or your workflow branch).
-5. Once deployed, your proxy will be live at `https://<APP_NAME>.azurewebsites.net/`.
+5. Once deployed, your proxy will be live at `https://<APP_NAME>.azurewebsites.net/`. or any custom domain you owning.
 
 ---
 
@@ -95,4 +95,5 @@ Originally developed as part of the **ViaAdNexus project (NOC 2025 August)**. In
 ## 📄 License
 
 [Apache-2.0](LICENSE) – includes an explicit patent license.
+
 
